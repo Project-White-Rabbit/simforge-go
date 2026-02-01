@@ -40,6 +40,7 @@ import (
 type Client struct {
 	apiKey     string
 	serviceURL string
+	enabled    bool
 	httpClient *httpClient
 }
 
@@ -51,11 +52,19 @@ func WithServiceURL(url string) Option {
 	return func(c *Client) { c.serviceURL = url }
 }
 
+// WithEnabled controls whether the client sends spans. Defaults to true.
+// When disabled, Span still executes the callback and Start returns a no-op ActiveSpan,
+// but no data is sent to the API.
+func WithEnabled(enabled bool) Option {
+	return func(c *Client) { c.enabled = enabled }
+}
+
 // NewClient creates a new Simforge client.
 func NewClient(apiKey string, opts ...Option) *Client {
 	c := &Client{
 		apiKey:     apiKey,
 		serviceURL: DefaultServiceURL,
+		enabled:    true,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -114,6 +123,10 @@ func WithInput(args ...any) SpanOption {
 // Use WithInput to capture input data.
 // If fn returns an error, it is captured in the span data and returned to the caller.
 func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc, opts ...SpanOption) (any, error) {
+	if !c.enabled {
+		return fn(ctx)
+	}
+
 	cfg := spanConfig{
 		name:     traceFunctionKey,
 		spanType: "custom",
@@ -192,6 +205,10 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 //
 // This is the recommended way to instrument existing functions without restructuring them.
 func (c *Client) Start(ctx context.Context, traceFunctionKey string, spanName string, opts ...SpanOption) (context.Context, *ActiveSpan) {
+	if !c.enabled {
+		return ctx, &ActiveSpan{}
+	}
+
 	cfg := spanConfig{
 		name:     spanName,
 		spanType: "custom",
@@ -297,6 +314,9 @@ func (s *ActiveSpan) SetError(err error) {
 // End completes the span and sends it to the API in the background.
 // End is idempotent — calling it multiple times has no effect after the first call.
 func (s *ActiveSpan) End() {
+	if s.client == nil {
+		return
+	}
 	s.once.Do(func() {
 		endedAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 

@@ -694,6 +694,66 @@ func TestFunction_Start(t *testing.T) {
 	}
 }
 
+func TestDisabled_SpanExecutesButDoesNotSend(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", WithServiceURL(server.URL), WithEnabled(false))
+	ctx := context.Background()
+
+	result, err := client.Span(ctx, "test-service", func(ctx context.Context) (any, error) {
+		return "executed", nil
+	})
+
+	client.FlushTraces(1 * time.Second)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "executed" {
+		t.Errorf("result = %v, want executed", result)
+	}
+	if requestCount != 0 {
+		t.Errorf("sent %d requests, want 0", requestCount)
+	}
+}
+
+func TestDisabled_StartReturnsNoOpSpan(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", WithServiceURL(server.URL), WithEnabled(false))
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test-service", "TestSpan", WithType("function"))
+	span.SetInput("hello")
+	span.SetOutput("world")
+	span.End()
+
+	client.FlushTraces(1 * time.Second)
+
+	if requestCount != 0 {
+		t.Errorf("sent %d requests, want 0", requestCount)
+	}
+}
+
+func TestEnabled_DefaultsToTrue(t *testing.T) {
+	client := NewClient("test-key")
+	if !client.enabled {
+		t.Error("enabled should default to true")
+	}
+}
+
 func newSpanCaptureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
