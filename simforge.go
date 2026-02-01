@@ -159,42 +159,47 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 
 	endedAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
-	// Build and send span data
-	spanData := map[string]any{
-		"name": cfg.name,
-		"type": cfg.spanType,
-	}
-	if cfg.functionName != "" {
-		spanData["function_name"] = cfg.functionName
-	}
-	if cfg.input != nil {
-		spanData["input"] = serializeValue(cfg.input)
-	}
-	if result != nil {
-		spanData["output"] = serializeValue(result)
-	}
-	if fnErr != nil {
-		spanData["error"] = fnErr.Error()
-	}
+	// Build and send span data — wrapped in a closure so a panic here
+	// never crashes the host app. The user's result/error is always returned.
+	func() {
+		defer func() { recover() }()
 
-	rawSpan := map[string]any{
-		"id":         spanID,
-		"trace_id":   traceID,
-		"started_at": startedAt,
-		"ended_at":   endedAt,
-		"span_data":  spanData,
-	}
-	if parentSpanID != "" {
-		rawSpan["parent_id"] = parentSpanID
-	}
+		spanData := map[string]any{
+			"name": cfg.name,
+			"type": cfg.spanType,
+		}
+		if cfg.functionName != "" {
+			spanData["function_name"] = cfg.functionName
+		}
+		if cfg.input != nil {
+			spanData["input"] = cfg.input
+		}
+		if result != nil {
+			spanData["output"] = result
+		}
+		if fnErr != nil {
+			spanData["error"] = fnErr.Error()
+		}
 
-	c.httpClient.sendExternalSpan(map[string]any{
-		"type":             "sdk-function",
-		"source":           "go-sdk-function",
-		"sourceTraceId":    traceID,
-		"traceFunctionKey": traceFunctionKey,
-		"rawSpan":          rawSpan,
-	})
+		rawSpan := map[string]any{
+			"id":         spanID,
+			"trace_id":   traceID,
+			"started_at": startedAt,
+			"ended_at":   endedAt,
+			"span_data":  spanData,
+		}
+		if parentSpanID != "" {
+			rawSpan["parent_id"] = parentSpanID
+		}
+
+		c.httpClient.sendExternalSpan(map[string]any{
+			"type":             "sdk-function",
+			"source":           "go-sdk-function",
+			"sourceTraceId":    traceID,
+			"traceFunctionKey": traceFunctionKey,
+			"rawSpan":          rawSpan,
+		})
+	}()
 
 	return result, fnErr
 }
@@ -318,6 +323,8 @@ func (s *ActiveSpan) End() {
 		return
 	}
 	s.once.Do(func() {
+		defer func() { recover() }() // Never crash the host app
+
 		endedAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
 		spanData := map[string]any{
@@ -328,10 +335,10 @@ func (s *ActiveSpan) End() {
 			spanData["function_name"] = s.cfg.functionName
 		}
 		if s.input != nil {
-			spanData["input"] = serializeValue(s.input)
+			spanData["input"] = s.input
 		}
 		if s.output != nil {
-			spanData["output"] = serializeValue(s.output)
+			spanData["output"] = s.output
 		}
 		if s.spanErr != nil {
 			spanData["error"] = s.spanErr.Error()

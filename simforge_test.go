@@ -754,6 +754,83 @@ func TestEnabled_DefaultsToTrue(t *testing.T) {
 	}
 }
 
+func TestSpan_UnserializableOutput_DoesNotCrash(t *testing.T) {
+	server := newSpanCaptureServer(t)
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	// Channels cannot be serialized by json.Marshal — this must not crash the app
+	result, err := client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		return map[string]any{"ch": make(chan int)}, nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	if err != nil {
+		t.Fatalf("span should not return error for unserializable output: %v", err)
+	}
+	// The result should still be returned to the caller
+	m := result.(map[string]any)
+	if m["ch"] == nil {
+		t.Error("result should contain the channel value")
+	}
+}
+
+func TestStart_UnserializableOutput_DoesNotCrash(t *testing.T) {
+	server := newSpanCaptureServer(t)
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "Test")
+	span.SetOutput(map[string]any{"fn": func() {}})
+	// End() must not panic even though func() can't be serialized
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+}
+
+func TestSpan_ServerDown_ReturnsResult(t *testing.T) {
+	// Point at a server that isn't listening — span sending will fail,
+	// but the user's result and error must still be returned.
+	client := newTestClient("http://127.0.0.1:1")
+	ctx := context.Background()
+
+	result, err := client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		return "my-result", nil
+	})
+
+	client.FlushTraces(1 * time.Second)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "my-result" {
+		t.Errorf("result = %v, want my-result", result)
+	}
+}
+
+func TestSpan_ServerDown_ReturnsUserError(t *testing.T) {
+	client := newTestClient("http://127.0.0.1:1")
+	ctx := context.Background()
+
+	result, err := client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		return nil, errors.New("user error")
+	})
+
+	client.FlushTraces(1 * time.Second)
+
+	if err == nil || err.Error() != "user error" {
+		t.Fatalf("err = %v, want 'user error'", err)
+	}
+	if result != nil {
+		t.Errorf("result = %v, want nil", result)
+	}
+}
+
 func newSpanCaptureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

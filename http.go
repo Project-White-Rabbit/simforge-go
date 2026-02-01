@@ -38,7 +38,7 @@ func (h *httpClient) request(endpoint string, payload map[string]any, opts ...re
 		opt(&cfg)
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := MarshalSpanPayload(payload)
 	if err != nil {
 		return fmt.Errorf("simforge: failed to marshal payload: %w", err)
 	}
@@ -103,7 +103,9 @@ func (h *httpClient) sendExternalSpan(payload map[string]any) {
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
-		// Silently ignore failures in background spans
+		defer func() {
+			recover() // Never crash the host app due to span sending
+		}()
 		_ = h.request("/api/sdk/externalSpans", merged, withTimeout(30*time.Second))
 	}()
 }

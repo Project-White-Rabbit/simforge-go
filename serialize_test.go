@@ -1,133 +1,475 @@
 package simforge
 
 import (
+	"encoding/json"
 	"testing"
-	"time"
+
+	"github.com/google/uuid"
 )
 
-func TestSerializeValue_Nil(t *testing.T) {
-	if got := serializeValue(nil); got != nil {
-		t.Errorf("expected nil, got %v", got)
+// These tests verify that complex Go types can be serialized to JSON
+// without errors, since span data is serialized via json.Marshal in the HTTP client.
+
+type ContentScoreResult struct {
+	ID         string     `json:"id"`
+	Content    string     `json:"content"`
+	Score      float64    `json:"score"`
+	Type       string     `json:"type"`
+	CompanyID  *uuid.UUID `json:"company_id,omitempty"`
+	CustomerID *uuid.UUID `json:"customer_id,omitempty"`
+	Number     *int       `json:"number,omitempty"`
+	Source     *string    `json:"source,omitempty"`
+	Title      *string    `json:"title,omitempty"`
+	Attribute  *string    `json:"attribute,omitempty"`
+}
+
+type ChatActionType string
+
+const (
+	ChatActionTypeSendMessage ChatActionType = "send_message"
+	ChatActionTypeSendReply   ChatActionType = "send_reply"
+)
+
+type ChatAction struct {
+	ID         string                 `json:"id"`
+	ActionType ChatActionType         `json:"action_type"`
+	Title      string                 `json:"title"`
+	Data       map[string]interface{} `json:"data"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type AccountWithType struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	AccountType string     `json:"account_type"`
+	CompanyID   *uuid.UUID `json:"company_id,omitempty"`
+	Role        *string    `json:"role,omitempty"`
+}
+
+type TableSort struct {
+	Column    string `json:"column"`
+	Direction string `json:"direction"`
+}
+
+type FilterDefinition struct {
+	ViewType      string       `json:"view_type"`
+	Name          string       `json:"name"`
+	TotalCount    int          `json:"total_count"`
+	ColumnsSchema []string     `json:"columns_schema,omitempty"`
+	SortingSchema *[]TableSort `json:"sorting_schema,omitempty"`
+}
+
+func TestJSONMarshal_Assembly(t *testing.T) {
+	companyID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	ticketNum := 42
+	ticketSource := "email"
+
+	scores := []ContentScoreResult{
+		{
+			ID:        "score-1",
+			Content:   "Great product",
+			Score:     0.95,
+			Type:      "review",
+			CompanyID: &companyID,
+			Number:    &ticketNum,
+			Source:    &ticketSource,
+		},
+		{
+			ID:      "score-2",
+			Content: "Needs improvement",
+			Score:   0.3,
+			Type:    "feedback",
+		},
+	}
+
+	tags := []string{"important", "follow-up"}
+
+	actions := []ChatAction{
+		{
+			ID:         "action-1",
+			ActionType: ChatActionTypeSendMessage,
+			Title:      "Send greeting",
+			Data:       map[string]interface{}{"message": "Hello!"},
+			Metadata:   map[string]interface{}{"source": "auto"},
+		},
+		{
+			ID:         "action-2",
+			ActionType: ChatActionTypeSendReply,
+			Title:      "Reply to ticket",
+			Data:       map[string]interface{}{"ticket_id": 123, "body": "Working on it"},
+		},
+	}
+
+	role := "admin"
+	accounts := []AccountWithType{
+		{
+			ID:          "acc-1",
+			Name:        "Acme Corp",
+			AccountType: "company",
+			CompanyID:   &companyID,
+		},
+		{
+			ID:          "acc-2",
+			Name:        "Jane Doe",
+			AccountType: "customer",
+			Role:        &role,
+		},
+	}
+
+	filter := &FilterDefinition{
+		ViewType:      "accounts",
+		Name:          "Enterprise Accounts",
+		TotalCount:    42,
+		ColumnsSchema: []string{"select", "name", "labels"},
+		SortingSchema: &[]TableSort{
+			{Column: "name", Direction: "asc"},
+		},
+	}
+
+	// Build span data the same way simforge.go does
+	spanData := map[string]any{
+		"name":   "test-span",
+		"type":   "function",
+		"input":  "query text",
+		"output": []any{scores, tags, actions, accounts, filter},
+	}
+
+	payload := map[string]any{
+		"type":             "sdk-function",
+		"source":           "go-sdk-function",
+		"sourceTraceId":    "trace-1",
+		"traceFunctionKey": "test-key",
+		"rawSpan": map[string]any{
+			"id":         "span-1",
+			"trace_id":   "trace-1",
+			"started_at": "2024-01-01T00:00:00.000Z",
+			"ended_at":   "2024-01-01T00:00:01.000Z",
+			"span_data":  spanData,
+		},
+	}
+
+	// This is what the HTTP client does — must not panic or error
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	// Verify round-trip
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	rawSpan := parsed["rawSpan"].(map[string]any)
+	sd := rawSpan["span_data"].(map[string]any)
+	output := sd["output"].([]any)
+
+	// Verify scores
+	gotScores := output[0].([]any)
+	if len(gotScores) != 2 {
+		t.Fatalf("scores len = %d, want 2", len(gotScores))
+	}
+	score1 := gotScores[0].(map[string]any)
+	if score1["id"] != "score-1" {
+		t.Errorf("score1.id = %v", score1["id"])
+	}
+	if score1["company_id"] != "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+		t.Errorf("score1.company_id = %v", score1["company_id"])
+	}
+	score2 := gotScores[1].(map[string]any)
+	if _, ok := score2["company_id"]; ok {
+		t.Error("score2 should omit nil company_id with omitempty")
+	}
+
+	// Verify actions with custom string type
+	gotActions := output[2].([]any)
+	action1 := gotActions[0].(map[string]any)
+	if action1["action_type"] != "send_message" {
+		t.Errorf("action1.action_type = %v", action1["action_type"])
+	}
+
+	// Verify filter
+	gotFilter := output[4].(map[string]any)
+	if gotFilter["name"] != "Enterprise Accounts" {
+		t.Errorf("filter.name = %v", gotFilter["name"])
+	}
+	sorting := gotFilter["sorting_schema"].([]any)
+	sort1 := sorting[0].(map[string]any)
+	if sort1["column"] != "name" {
+		t.Errorf("sort.column = %v", sort1["column"])
 	}
 }
 
-func TestSerializeValue_Primitives(t *testing.T) {
-	tests := []struct {
-		input any
-		want  any
-	}{
-		{"hello", "hello"},
-		{true, true},
-		{false, false},
-		{42, 42},
-		{int64(100), int64(100)},
-		{3.14, 3.14},
-		{float32(2.5), float64(2.5)},
+func TestJSONMarshal_NilPointers(t *testing.T) {
+	// Verify nil pointers don't cause panics and serialize as null
+	type Record struct {
+		ID        string     `json:"id"`
+		CompanyID *uuid.UUID `json:"company_id,omitempty"`
+		Title     *string    `json:"title"`
 	}
 
-	for _, tt := range tests {
-		got := serializeValue(tt.input)
-		if got != tt.want {
-			t.Errorf("serializeValue(%v) = %v, want %v", tt.input, got, tt.want)
-		}
+	spanData := map[string]any{
+		"output": Record{ID: "rec-1", CompanyID: nil, Title: nil},
 	}
-}
 
-func TestSerializeValue_Time(t *testing.T) {
-	ts := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-	got := serializeValue(ts)
-	want := "2024-01-15T10:30:00.000Z"
-	if got != want {
-		t.Errorf("serializeValue(time) = %q, want %q", got, want)
+	data, err := json.Marshal(spanData)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
 	}
-}
 
-func TestSerializeValue_Slice(t *testing.T) {
-	input := []any{"a", 1, true}
-	got := serializeValue(input).([]any)
-	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3", len(got))
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
-	if got[0] != "a" || got[1] != 1 || got[2] != true {
-		t.Errorf("unexpected values: %v", got)
+
+	output := parsed["output"].(map[string]any)
+	if _, ok := output["company_id"]; ok {
+		t.Error("expected company_id omitted with omitempty")
+	}
+	if output["title"] != nil {
+		t.Errorf("title = %v, want nil", output["title"])
 	}
 }
 
-func TestSerializeValue_Map(t *testing.T) {
-	input := map[string]any{"name": "Alice", "age": 30}
-	got := serializeValue(input).(map[string]any)
-	if got["name"] != "Alice" || got["age"] != 30 {
-		t.Errorf("unexpected values: %v", got)
+// Round-trip tests: verify that serialized span data can be deserialized
+// back into the original typed structs with all field values preserved.
+// Uses MarshalSpanPayload → UnmarshalSpanPayload[T] to prove the full cycle.
+
+func TestRoundTrip_ContentScoreResult(t *testing.T) {
+	companyID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	ticketNum := 42
+	ticketSource := "email"
+
+	original := []ContentScoreResult{
+		{
+			ID:        "score-1",
+			Content:   "Great product",
+			Score:     0.95,
+			Type:      "review",
+			CompanyID: &companyID,
+			Number:    &ticketNum,
+			Source:    &ticketSource,
+		},
+		{
+			ID:      "score-2",
+			Content: "Needs improvement",
+			Score:   0.3,
+			Type:    "feedback",
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	got, err := UnmarshalSpanPayload[[]ContentScoreResult](data)
+	if err != nil {
+		t.Fatalf("UnmarshalSpanPayload failed: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+
+	// First score: all fields populated
+	if got[0].ID != "score-1" {
+		t.Errorf("got[0].ID = %v", got[0].ID)
+	}
+	if got[0].Score != 0.95 {
+		t.Errorf("got[0].Score = %v", got[0].Score)
+	}
+	if got[0].CompanyID == nil || *got[0].CompanyID != companyID {
+		t.Errorf("got[0].CompanyID = %v, want %v", got[0].CompanyID, companyID)
+	}
+	if got[0].Number == nil || *got[0].Number != 42 {
+		t.Errorf("got[0].Number = %v", got[0].Number)
+	}
+	if got[0].Source == nil || *got[0].Source != "email" {
+		t.Errorf("got[0].Source = %v", got[0].Source)
+	}
+
+	// Second score: nil optional fields
+	if got[1].CompanyID != nil {
+		t.Errorf("got[1].CompanyID should be nil, got %v", got[1].CompanyID)
+	}
+	if got[1].Number != nil {
+		t.Errorf("got[1].Number should be nil, got %v", got[1].Number)
 	}
 }
 
-type testStruct struct {
-	Name  string `json:"name"`
-	Age   int    `json:"age"`
-	Email string `json:"email,omitempty"`
+func TestRoundTrip_ChatAction(t *testing.T) {
+	original := []ChatAction{
+		{
+			ID:         "action-1",
+			ActionType: ChatActionTypeSendMessage,
+			Title:      "Send greeting",
+			Data:       map[string]interface{}{"message": "Hello!"},
+			Metadata:   map[string]interface{}{"source": "auto"},
+		},
+		{
+			ID:         "action-2",
+			ActionType: ChatActionTypeSendReply,
+			Title:      "Reply to ticket",
+			Data:       map[string]interface{}{"ticket_id": float64(123), "body": "Working on it"},
+		},
+	}
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	got, err := UnmarshalSpanPayload[[]ChatAction](data)
+	if err != nil {
+		t.Fatalf("UnmarshalSpanPayload failed: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+
+	// Custom string type preserved
+	if got[0].ActionType != ChatActionTypeSendMessage {
+		t.Errorf("got[0].ActionType = %v, want %v", got[0].ActionType, ChatActionTypeSendMessage)
+	}
+	if got[1].ActionType != ChatActionTypeSendReply {
+		t.Errorf("got[1].ActionType = %v, want %v", got[1].ActionType, ChatActionTypeSendReply)
+	}
+
+	// Nested map data preserved
+	if got[0].Data["message"] != "Hello!" {
+		t.Errorf("got[0].Data[message] = %v", got[0].Data["message"])
+	}
+	if got[1].Data["body"] != "Working on it" {
+		t.Errorf("got[1].Data[body] = %v", got[1].Data["body"])
+	}
+
+	// Metadata omitempty: first has it, second doesn't
+	if got[0].Metadata["source"] != "auto" {
+		t.Errorf("got[0].Metadata[source] = %v", got[0].Metadata["source"])
+	}
+	if got[1].Metadata != nil {
+		t.Errorf("got[1].Metadata should be nil, got %v", got[1].Metadata)
+	}
 }
 
-func TestSerializeValue_Struct(t *testing.T) {
-	input := testStruct{Name: "Alice", Age: 30, Email: "alice@example.com"}
-	got := serializeValue(input).(map[string]any)
-	if got["name"] != "Alice" {
-		t.Errorf("name = %v, want Alice", got["name"])
+func TestRoundTrip_FilterDefinition(t *testing.T) {
+	original := FilterDefinition{
+		ViewType:      "accounts",
+		Name:          "Enterprise Accounts",
+		TotalCount:    42,
+		ColumnsSchema: []string{"select", "name", "labels"},
+		SortingSchema: &[]TableSort{
+			{Column: "name", Direction: "asc"},
+			{Column: "created_at", Direction: "desc"},
+		},
 	}
-	if got["age"] != 30 {
-		t.Errorf("age = %v, want 30", got["age"])
+
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
 	}
-}
 
-type testStringer struct{}
-
-func (testStringer) String() string { return "custom-string" }
-
-func TestSerializeValue_Stringer(t *testing.T) {
-	got := serializeValue(testStringer{})
-	if got != "custom-string" {
-		t.Errorf("got %v, want custom-string", got)
+	got, err := UnmarshalSpanPayload[FilterDefinition](data)
+	if err != nil {
+		t.Fatalf("UnmarshalSpanPayload failed: %v", err)
 	}
-}
 
-func TestSerializeValue_Pointer(t *testing.T) {
-	s := "hello"
-	got := serializeValue(&s)
-	if got != "hello" {
-		t.Errorf("got %v, want hello", got)
+	if got.ViewType != "accounts" {
+		t.Errorf("ViewType = %v", got.ViewType)
 	}
-}
-
-func TestSerializeValue_NilPointer(t *testing.T) {
-	var s *string
-	got := serializeValue(s)
-	if got != nil {
-		t.Errorf("got %v, want nil", got)
+	if got.TotalCount != 42 {
+		t.Errorf("TotalCount = %v", got.TotalCount)
 	}
-}
-
-func TestSerializeInputs(t *testing.T) {
-	args := []any{"hello", 42, true}
-	got := serializeInputs(args)
-	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3", len(got))
+	if len(got.ColumnsSchema) != 3 || got.ColumnsSchema[0] != "select" {
+		t.Errorf("ColumnsSchema = %v", got.ColumnsSchema)
 	}
-	if got[0] != "hello" || got[1] != 42 || got[2] != true {
-		t.Errorf("unexpected values: %v", got)
+	if got.SortingSchema == nil {
+		t.Fatal("SortingSchema is nil")
+	}
+	sorting := *got.SortingSchema
+	if len(sorting) != 2 {
+		t.Fatalf("SortingSchema len = %d, want 2", len(sorting))
+	}
+	if sorting[0].Column != "name" || sorting[0].Direction != "asc" {
+		t.Errorf("sorting[0] = %+v", sorting[0])
+	}
+	if sorting[1].Column != "created_at" || sorting[1].Direction != "desc" {
+		t.Errorf("sorting[1] = %+v", sorting[1])
 	}
 }
 
-type jsonIgnoreStruct struct {
-	Name   string `json:"name"`
-	Secret string `json:"-"`
-}
+func TestRoundTrip_FullSpanPayload(t *testing.T) {
+	companyID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	role := "admin"
 
-func TestSerializeValue_JsonIgnoreTag(t *testing.T) {
-	input := jsonIgnoreStruct{Name: "Alice", Secret: "hidden"}
-	got := serializeValue(input).(map[string]any)
-	if _, ok := got["Secret"]; ok {
-		t.Error("expected Secret to be omitted via json:\"-\" tag")
+	original := AccountWithType{
+		ID:          "acc-1",
+		Name:        "Acme Corp",
+		AccountType: "company",
+		CompanyID:   &companyID,
+		Role:        &role,
 	}
-	if got["name"] != "Alice" {
-		t.Errorf("name = %v, want Alice", got["name"])
+
+	// Build a full span payload the way the SDK does
+	payload := map[string]any{
+		"type":             "sdk-function",
+		"source":           "go-sdk-function",
+		"sourceTraceId":    "trace-1",
+		"traceFunctionKey": "test-key",
+		"rawSpan": map[string]any{
+			"id":         "span-1",
+			"trace_id":   "trace-1",
+			"started_at": "2024-01-01T00:00:00.000Z",
+			"ended_at":   "2024-01-01T00:00:01.000Z",
+			"span_data": map[string]any{
+				"name":   "test-span",
+				"type":   "function",
+				"input":  "query text",
+				"output": original,
+			},
+		},
+	}
+
+	data, err := MarshalSpanPayload(payload)
+	if err != nil {
+		t.Fatalf("MarshalSpanPayload failed: %v", err)
+	}
+
+	// Server receives the full payload as a generic map
+	parsed, err := UnmarshalSpanPayload[map[string]any](data)
+	if err != nil {
+		t.Fatalf("UnmarshalSpanPayload failed: %v", err)
+	}
+
+	// Extract the output JSON from the nested map
+	rawSpan := parsed["rawSpan"].(map[string]any)
+	sd := rawSpan["span_data"].(map[string]any)
+	outputJSON, err := json.Marshal(sd["output"])
+	if err != nil {
+		t.Fatalf("re-marshal output failed: %v", err)
+	}
+
+	// Deserialize back into the original typed struct
+	got, err := UnmarshalSpanPayload[AccountWithType](outputJSON)
+	if err != nil {
+		t.Fatalf("UnmarshalSpanPayload[AccountWithType] failed: %v", err)
+	}
+
+	if got.ID != "acc-1" {
+		t.Errorf("ID = %v", got.ID)
+	}
+	if got.Name != "Acme Corp" {
+		t.Errorf("Name = %v", got.Name)
+	}
+	if got.AccountType != "company" {
+		t.Errorf("AccountType = %v", got.AccountType)
+	}
+	if got.CompanyID == nil || *got.CompanyID != companyID {
+		t.Errorf("CompanyID = %v, want %v", got.CompanyID, companyID)
+	}
+	if got.Role == nil || *got.Role != "admin" {
+		t.Errorf("Role = %v", got.Role)
 	}
 }
