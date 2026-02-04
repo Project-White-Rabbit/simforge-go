@@ -348,6 +348,7 @@ func (s *ActiveSpan) SetMetadata(metadata map[string]any) {
 // End completes the span and sends it to the API in the background.
 // End is idempotent — calling it multiple times has no effect after the first call.
 func (s *ActiveSpan) End() {
+	defer func() { recover() }() // Never crash the host app (catches nil receiver)
 	if s.client == nil {
 		return
 	}
