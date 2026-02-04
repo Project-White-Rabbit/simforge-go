@@ -84,6 +84,7 @@ type spanConfig struct {
 	spanType     string
 	functionName string
 	input        any
+	metadata     map[string]any
 }
 
 // WithName sets an explicit span name. Defaults to the traceFunctionKey if not set.
@@ -100,6 +101,12 @@ func WithType(spanType string) SpanOption {
 // WithFunctionName sets the function name recorded in span data.
 func WithFunctionName(name string) SpanOption {
 	return func(c *spanConfig) { c.functionName = name }
+}
+
+// WithMetadata sets custom metadata on the span. The metadata map is included in span_data
+// and stored as-is. Use this to attach arbitrary key-value data to a span.
+func WithMetadata(metadata map[string]any) SpanOption {
+	return func(c *spanConfig) { c.metadata = metadata }
 }
 
 // WithInput sets the input data recorded in span data for the closure-style Span API.
@@ -179,6 +186,9 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 		}
 		if fnErr != nil {
 			spanData["error"] = fnErr.Error()
+		}
+		if cfg.metadata != nil {
+			spanData["metadata"] = cfg.metadata
 		}
 
 		rawSpan := map[string]any{
@@ -293,12 +303,14 @@ type ActiveSpan struct {
 	input            any
 	output           any
 	spanErr          error
+	metadata         map[string]any
 	once             sync.Once
 }
 
 // SetInput records the span's input data. Pass one or more arguments.
 // A single argument is stored directly; multiple arguments are stored as a slice.
 func (s *ActiveSpan) SetInput(args ...any) {
+	defer func() { recover() }()
 	if len(args) == 1 {
 		s.input = args[0]
 	} else {
@@ -308,12 +320,29 @@ func (s *ActiveSpan) SetInput(args ...any) {
 
 // SetOutput records the span's output data.
 func (s *ActiveSpan) SetOutput(output any) {
+	defer func() { recover() }()
 	s.output = output
 }
 
 // SetError records an error on the span.
 func (s *ActiveSpan) SetError(err error) {
+	defer func() { recover() }()
 	s.spanErr = err
+}
+
+// SetMetadata sets custom metadata on the span. Merges with any existing
+// runtime metadata, with later values taking precedence on conflict.
+func (s *ActiveSpan) SetMetadata(metadata map[string]any) {
+	defer func() { recover() }()
+	if metadata == nil {
+		return
+	}
+	if s.metadata == nil {
+		s.metadata = make(map[string]any, len(metadata))
+	}
+	for k, v := range metadata {
+		s.metadata[k] = v
+	}
 }
 
 // End completes the span and sends it to the API in the background.
@@ -342,6 +371,16 @@ func (s *ActiveSpan) End() {
 		}
 		if s.spanErr != nil {
 			spanData["error"] = s.spanErr.Error()
+		}
+		if s.cfg.metadata != nil || s.metadata != nil {
+			merged := make(map[string]any)
+			for k, v := range s.cfg.metadata {
+				merged[k] = v
+			}
+			for k, v := range s.metadata {
+				merged[k] = v // runtime wins
+			}
+			spanData["metadata"] = merged
 		}
 
 		rawSpan := map[string]any{

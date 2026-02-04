@@ -831,6 +831,158 @@ func TestSpan_ServerDown_ReturnsUserError(t *testing.T) {
 	}
 }
 
+func TestSpan_WithMetadata(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		mu.Lock()
+		captured = payload
+		mu.Unlock()
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		return "result", nil
+	}, WithMetadata(map[string]any{"user_id": "u-123", "region": "us-east"}))
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	metadata := spanData["metadata"].(map[string]any)
+	if metadata["user_id"] != "u-123" {
+		t.Errorf("metadata user_id = %v, want u-123", metadata["user_id"])
+	}
+	if metadata["region"] != "us-east" {
+		t.Errorf("metadata region = %v, want us-east", metadata["region"])
+	}
+}
+
+func TestSpan_NoMetadata(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		mu.Lock()
+		captured = payload
+		mu.Unlock()
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		return "result", nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	if _, ok := spanData["metadata"]; ok {
+		t.Error("metadata should not be present when not set")
+	}
+}
+
+func TestStart_WithMetadata(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		mu.Lock()
+		captured = payload
+		mu.Unlock()
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "TestSpan", WithType("function"))
+	span.SetMetadata(map[string]any{"request_id": "req-456", "env": "staging"})
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	metadata := spanData["metadata"].(map[string]any)
+	if metadata["request_id"] != "req-456" {
+		t.Errorf("metadata request_id = %v, want req-456", metadata["request_id"])
+	}
+	if metadata["env"] != "staging" {
+		t.Errorf("metadata env = %v, want staging", metadata["env"])
+	}
+}
+
+func TestStart_MetadataMerge(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		mu.Lock()
+		captured = payload
+		mu.Unlock()
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "TestSpan", WithType("function"),
+		WithMetadata(map[string]any{"user_id": "u-123", "region": "us-east"}))
+	span.SetMetadata(map[string]any{"region": "eu-west", "request_id": "req-789"})
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	metadata := spanData["metadata"].(map[string]any)
+	if metadata["user_id"] != "u-123" {
+		t.Errorf("metadata user_id = %v, want u-123", metadata["user_id"])
+	}
+	if metadata["region"] != "eu-west" {
+		t.Errorf("metadata region = %v, want eu-west (runtime should win)", metadata["region"])
+	}
+	if metadata["request_id"] != "req-789" {
+		t.Errorf("metadata request_id = %v, want req-789", metadata["request_id"])
+	}
+}
+
 func newSpanCaptureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
