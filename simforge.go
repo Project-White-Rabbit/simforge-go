@@ -30,6 +30,8 @@ package simforge
 import (
 	"context"
 	"fmt"
+	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,6 +70,10 @@ func NewClient(apiKey string, opts ...Option) *Client {
 	}
 	for _, opt := range opts {
 		opt(c)
+	}
+	if c.enabled && strings.TrimSpace(c.apiKey) == "" {
+		log.Println("Simforge: apiKey is empty — tracing is disabled. Provide a valid API key to enable tracing.")
+		c.enabled = false
 	}
 	c.httpClient = newHTTPClient(c.apiKey, c.serviceURL)
 	return c

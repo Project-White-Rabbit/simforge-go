@@ -983,6 +983,51 @@ func TestStart_MetadataMerge(t *testing.T) {
 	}
 }
 
+func TestNewClient_EmptyAPIKeyAutoDisables(t *testing.T) {
+	client := NewClient("")
+	if client.enabled {
+		t.Error("client with empty apiKey should be auto-disabled")
+	}
+}
+
+func TestNewClient_WhitespaceAPIKeyAutoDisables(t *testing.T) {
+	client := NewClient("   ")
+	if client.enabled {
+		t.Error("client with whitespace apiKey should be auto-disabled")
+	}
+}
+
+func TestSpan_EmptyAPIKeyRunsFunctionSilently(t *testing.T) {
+	client := NewClient("")
+	ctx := context.Background()
+
+	result, err := client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		return "result", nil
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "result" {
+		t.Errorf("result = %v, want result", result)
+	}
+}
+
+func TestStart_EmptyAPIKeyReturnsNoOpSpan(t *testing.T) {
+	client := NewClient("")
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "Test")
+	span.End() // should not panic
+}
+
+func TestNewClient_ExplicitDisabledWithEmptyAPIKeyStaysDisabled(t *testing.T) {
+	client := NewClient("", WithEnabled(false))
+	if client.enabled {
+		t.Error("explicitly disabled client should stay disabled")
+	}
+}
+
 func newSpanCaptureServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
