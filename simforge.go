@@ -90,7 +90,6 @@ type spanConfig struct {
 	spanType     string
 	functionName string
 	input        any
-	metadata     map[string]any
 }
 
 // WithName sets an explicit span name. Defaults to the traceFunctionKey if not set.
@@ -107,12 +106,6 @@ func WithType(spanType string) SpanOption {
 // WithFunctionName sets the function name recorded in span data.
 func WithFunctionName(name string) SpanOption {
 	return func(c *spanConfig) { c.functionName = name }
-}
-
-// WithMetadata sets custom metadata on the span. The metadata map is included in span_data
-// and stored as-is. Use this to attach arbitrary key-value data to a span.
-func WithMetadata(metadata map[string]any) SpanOption {
-	return func(c *spanConfig) { c.metadata = metadata }
 }
 
 // WithInput sets the input data recorded in span data for the closure-style Span API.
@@ -160,8 +153,14 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 	spanID := uuid.New().String()
 
 	var parentSpanID string
+	isRootSpan := parent == nil
 	if parent != nil {
 		parentSpanID = parent.spanID
+	}
+
+	// Register trace state for root spans
+	if isRootSpan && getTraceState(traceID) == nil {
+		createTraceState(traceID)
 	}
 
 	startedAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
@@ -193,9 +192,6 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 		if fnErr != nil {
 			spanData["error"] = fnErr.Error()
 		}
-		if cfg.metadata != nil {
-			spanData["metadata"] = cfg.metadata
-		}
 
 		rawSpan := map[string]any{
 			"id":         spanID,
@@ -215,6 +211,11 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 			"traceFunctionKey": traceFunctionKey,
 			"rawSpan":          rawSpan,
 		})
+
+		// Send trace completion for root spans
+		if isRootSpan {
+			c.sendTraceCompletion(traceFunctionKey, traceID, startedAt, endedAt)
+		}
 	}()
 
 	return result, fnErr
@@ -246,8 +247,14 @@ func (c *Client) Start(ctx context.Context, traceFunctionKey string, spanName st
 	spanID := uuid.New().String()
 
 	var parentSpanID string
+	isRootSpan := parent == nil
 	if parent != nil {
 		parentSpanID = parent.spanID
+	}
+
+	// Register trace state for root spans
+	if isRootSpan && getTraceState(traceID) == nil {
+		createTraceState(traceID)
 	}
 
 	childCtx := withSpanContext(ctx, traceID, spanID)
@@ -260,6 +267,7 @@ func (c *Client) Start(ctx context.Context, traceFunctionKey string, spanName st
 		parentSpanID:     parentSpanID,
 		startedAt:        time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 		cfg:              cfg,
+		isRootSpan:       isRootSpan,
 	}
 
 	return childCtx, span
@@ -309,14 +317,19 @@ type ActiveSpan struct {
 	input            any
 	output           any
 	spanErr          error
-	metadata         map[string]any
+	contexts         []ContextEntry
+	isRootSpan       bool
 	once             sync.Once
 }
 
 // SetInput records the span's input data. Pass one or more arguments.
 // A single argument is stored directly; multiple arguments are stored as a slice.
+// Safe to call on nil receiver (no-op).
 func (s *ActiveSpan) SetInput(args ...any) {
 	defer func() { recover() }()
+	if s == nil {
+		return
+	}
 	if len(args) == 1 {
 		s.input = args[0]
 	} else {
@@ -325,30 +338,35 @@ func (s *ActiveSpan) SetInput(args ...any) {
 }
 
 // SetOutput records the span's output data.
+// Safe to call on nil receiver (no-op).
 func (s *ActiveSpan) SetOutput(output any) {
 	defer func() { recover() }()
+	if s == nil {
+		return
+	}
 	s.output = output
 }
 
 // SetError records an error on the span.
+// Safe to call on nil receiver (no-op).
 func (s *ActiveSpan) SetError(err error) {
 	defer func() { recover() }()
+	if s == nil {
+		return
+	}
 	s.spanErr = err
 }
 
-// SetMetadata sets custom metadata on the span. Merges with any existing
-// runtime metadata, with later values taking precedence on conflict.
-func (s *ActiveSpan) SetMetadata(metadata map[string]any) {
+// AddContext adds a context entry to the span.
+// The entire map is pushed as a single entry in the contexts array.
+// Context entries are accumulated - multiple calls add to the list.
+// Safe to call on nil receiver (no-op).
+func (s *ActiveSpan) AddContext(context map[string]any) {
 	defer func() { recover() }()
-	if metadata == nil {
+	if s == nil || context == nil {
 		return
 	}
-	if s.metadata == nil {
-		s.metadata = make(map[string]any, len(metadata))
-	}
-	for k, v := range metadata {
-		s.metadata[k] = v
-	}
+	s.contexts = append(s.contexts, context)
 }
 
 // End completes the span and sends it to the API in the background.
@@ -379,15 +397,8 @@ func (s *ActiveSpan) End() {
 		if s.spanErr != nil {
 			spanData["error"] = s.spanErr.Error()
 		}
-		if s.cfg.metadata != nil || s.metadata != nil {
-			merged := make(map[string]any)
-			for k, v := range s.cfg.metadata {
-				merged[k] = v
-			}
-			for k, v := range s.metadata {
-				merged[k] = v // runtime wins
-			}
-			spanData["metadata"] = merged
+		if len(s.contexts) > 0 {
+			spanData["contexts"] = s.contexts
 		}
 
 		rawSpan := map[string]any{
@@ -408,5 +419,53 @@ func (s *ActiveSpan) End() {
 			"traceFunctionKey": s.traceFunctionKey,
 			"rawSpan":          rawSpan,
 		})
+
+		// Send trace completion for root spans
+		if s.isRootSpan {
+			s.client.sendTraceCompletion(s.traceFunctionKey, s.traceID, s.startedAt, endedAt)
+		}
 	})
+}
+
+// sendTraceCompletion sends trace completion data to the API.
+func (c *Client) sendTraceCompletion(traceFunctionKey, traceID, startedAt, endedAt string) {
+	defer func() { recover() }() // Never crash the host app
+
+	ts := getTraceState(traceID)
+	traceStartedAt := startedAt
+	if ts != nil && ts.StartedAt != "" {
+		traceStartedAt = ts.StartedAt
+	}
+
+	rawTrace := map[string]any{
+		"id":         traceID,
+		"started_at": traceStartedAt,
+		"ended_at":   endedAt,
+	}
+
+	if ts != nil {
+		if ts.Metadata != nil {
+			rawTrace["metadata"] = ts.Metadata
+		}
+		if len(ts.Contexts) > 0 {
+			rawTrace["contexts"] = ts.Contexts
+		}
+	}
+
+	payload := map[string]any{
+		"type":             "sdk-function",
+		"source":           "go-sdk-function",
+		"traceFunctionKey": traceFunctionKey,
+		"externalTrace":    rawTrace,
+		"completed":        true,
+	}
+
+	if ts != nil && ts.SessionID != "" {
+		payload["sessionId"] = ts.SessionID
+	}
+
+	c.httpClient.sendExternalTrace(payload)
+
+	// Clean up trace state
+	deleteTraceState(traceID)
 }

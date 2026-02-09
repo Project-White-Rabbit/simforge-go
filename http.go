@@ -110,6 +110,24 @@ func (h *httpClient) sendExternalSpan(payload map[string]any) {
 	}()
 }
 
+// sendExternalTrace sends a trace payload in the background (fire-and-forget).
+func (h *httpClient) sendExternalTrace(payload map[string]any) {
+	merged := make(map[string]any, len(payload)+1)
+	for k, v := range payload {
+		merged[k] = v
+	}
+	merged["sdkVersion"] = Version
+
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		defer func() {
+			recover() // Never crash the host app due to trace sending
+		}()
+		_ = h.request("/api/sdk/externalTraces", merged, withTimeout(10*time.Second))
+	}()
+}
+
 // flush waits for all pending background goroutines to complete.
 func (h *httpClient) flush(timeout time.Duration) {
 	done := make(chan struct{})

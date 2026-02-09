@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -60,9 +61,12 @@ func TestSpan_WithNameAndType(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -111,9 +115,12 @@ func TestSpan_CapturesError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -165,9 +172,12 @@ func TestSpan_NestedSpans_ShareTraceID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		payloads = append(payloads, payload)
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			payloads = append(payloads, payload)
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -206,9 +216,12 @@ func TestSpan_NestedSpans_HaveParentID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		payloads = append(payloads, payload)
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			payloads = append(payloads, payload)
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -264,9 +277,12 @@ func TestSpan_IndependentCalls_DifferentTraceIDs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		payloads = append(payloads, payload)
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			payloads = append(payloads, payload)
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -305,9 +321,12 @@ func TestGetFunction_Span(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -365,9 +384,12 @@ func TestSpan_CapturesOutput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -400,9 +422,12 @@ func TestSpan_WithInput(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -441,9 +466,12 @@ func TestSpan_WithInputSingleArg(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -475,9 +503,12 @@ func TestStart_BasicExecution(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -533,9 +564,12 @@ func TestStart_CapturesError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -562,12 +596,15 @@ func TestStart_CapturesError(t *testing.T) {
 
 func TestStart_IdempotentEnd(t *testing.T) {
 	var mu sync.Mutex
-	var count int
+	var spanCount int
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		count++
-		mu.Unlock()
+		// Only count span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			spanCount++
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -586,8 +623,8 @@ func TestStart_IdempotentEnd(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if count != 1 {
-		t.Errorf("span sent %d times, want 1", count)
+	if spanCount != 1 {
+		t.Errorf("span sent %d times, want 1", spanCount)
 	}
 }
 
@@ -598,9 +635,12 @@ func TestStart_NestedSpans(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		payloads = append(payloads, payload)
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			payloads = append(payloads, payload)
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -662,9 +702,12 @@ func TestFunction_Start(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -838,9 +881,12 @@ func TestSpan_WithMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -849,9 +895,11 @@ func TestSpan_WithMetadata(t *testing.T) {
 	client := newTestClient(server.URL)
 	ctx := context.Background()
 
+	// Closure-style spans don't have access to AddContext (no ActiveSpan handle)
+	// Context can only be added via Start/End style with ActiveSpan
 	client.Span(ctx, "test", func(ctx context.Context) (any, error) {
 		return "result", nil
-	}, WithMetadata(map[string]any{"user_id": "u-123", "region": "us-east"}))
+	})
 
 	client.FlushTraces(5 * time.Second)
 
@@ -860,25 +908,24 @@ func TestSpan_WithMetadata(t *testing.T) {
 
 	rawSpan := captured["rawSpan"].(map[string]any)
 	spanData := rawSpan["span_data"].(map[string]any)
-	metadata := spanData["metadata"].(map[string]any)
-	if metadata["user_id"] != "u-123" {
-		t.Errorf("metadata user_id = %v, want u-123", metadata["user_id"])
-	}
-	if metadata["region"] != "us-east" {
-		t.Errorf("metadata region = %v, want us-east", metadata["region"])
+	if _, ok := spanData["contexts"]; ok {
+		t.Error("contexts should not be present for closure-style span without AddContext")
 	}
 }
 
-func TestSpan_NoMetadata(t *testing.T) {
+func TestSpan_NoContext(t *testing.T) {
 	var mu sync.Mutex
 	var captured map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -898,21 +945,24 @@ func TestSpan_NoMetadata(t *testing.T) {
 
 	rawSpan := captured["rawSpan"].(map[string]any)
 	spanData := rawSpan["span_data"].(map[string]any)
-	if _, ok := spanData["metadata"]; ok {
-		t.Error("metadata should not be present when not set")
+	if _, ok := spanData["contexts"]; ok {
+		t.Error("contexts should not be present when not set")
 	}
 }
 
-func TestStart_WithMetadata(t *testing.T) {
+func TestStart_WithContext(t *testing.T) {
 	var mu sync.Mutex
 	var captured map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -922,7 +972,7 @@ func TestStart_WithMetadata(t *testing.T) {
 	ctx := context.Background()
 
 	_, span := client.Start(ctx, "test", "TestSpan", WithType("function"))
-	span.SetMetadata(map[string]any{"request_id": "req-456", "env": "staging"})
+	span.AddContext(map[string]any{"request_id": "req-456", "env": "staging"})
 	span.End()
 
 	client.FlushTraces(5 * time.Second)
@@ -932,25 +982,33 @@ func TestStart_WithMetadata(t *testing.T) {
 
 	rawSpan := captured["rawSpan"].(map[string]any)
 	spanData := rawSpan["span_data"].(map[string]any)
-	metadata := spanData["metadata"].(map[string]any)
-	if metadata["request_id"] != "req-456" {
-		t.Errorf("metadata request_id = %v, want req-456", metadata["request_id"])
+	contexts := spanData["contexts"].([]any)
+	if len(contexts) != 1 {
+		t.Errorf("expected 1 context entry, got %d", len(contexts))
 	}
-	if metadata["env"] != "staging" {
-		t.Errorf("metadata env = %v, want staging", metadata["env"])
+	// Each AddContext call pushes the entire map as one entry
+	entry := contexts[0].(map[string]any)
+	if entry["request_id"] != "req-456" {
+		t.Error("expected request_id to be 'req-456'")
+	}
+	if entry["env"] != "staging" {
+		t.Error("expected env to be 'staging'")
 	}
 }
 
-func TestStart_MetadataMerge(t *testing.T) {
+func TestStart_ContextAccumulation(t *testing.T) {
 	var mu sync.Mutex
 	var captured map[string]any
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		mu.Lock()
-		captured = payload
-		mu.Unlock()
+		// Only capture span requests, not trace requests
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
@@ -959,9 +1017,9 @@ func TestStart_MetadataMerge(t *testing.T) {
 	client := newTestClient(server.URL)
 	ctx := context.Background()
 
-	_, span := client.Start(ctx, "test", "TestSpan", WithType("function"),
-		WithMetadata(map[string]any{"user_id": "u-123", "region": "us-east"}))
-	span.SetMetadata(map[string]any{"region": "eu-west", "request_id": "req-789"})
+	_, span := client.Start(ctx, "test", "TestSpan", WithType("function"))
+	span.AddContext(map[string]any{"step": "validation"})
+	span.AddContext(map[string]any{"step": "processing"})
 	span.End()
 
 	client.FlushTraces(5 * time.Second)
@@ -971,15 +1029,18 @@ func TestStart_MetadataMerge(t *testing.T) {
 
 	rawSpan := captured["rawSpan"].(map[string]any)
 	spanData := rawSpan["span_data"].(map[string]any)
-	metadata := spanData["metadata"].(map[string]any)
-	if metadata["user_id"] != "u-123" {
-		t.Errorf("metadata user_id = %v, want u-123", metadata["user_id"])
+	contexts := spanData["contexts"].([]any)
+	if len(contexts) != 2 {
+		t.Errorf("expected 2 context entries, got %d", len(contexts))
 	}
-	if metadata["region"] != "eu-west" {
-		t.Errorf("metadata region = %v, want eu-west (runtime should win)", metadata["region"])
+	// Each AddContext call pushes the entire map as one entry
+	entry1 := contexts[0].(map[string]any)
+	entry2 := contexts[1].(map[string]any)
+	if entry1["step"] != "validation" {
+		t.Error("expected first entry step to be 'validation'")
 	}
-	if metadata["request_id"] != "req-789" {
-		t.Errorf("metadata request_id = %v, want req-789", metadata["request_id"])
+	if entry2["step"] != "processing" {
+		t.Error("expected second entry step to be 'processing'")
 	}
 }
 
@@ -1034,4 +1095,301 @@ func newSpanCaptureServer(t *testing.T) *httptest.Server {
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]any{"success": true})
 	}))
+}
+
+func TestGetCurrentTrace_OutsideSpan(t *testing.T) {
+	ctx := context.Background()
+	trace := GetCurrentTrace(ctx)
+	if trace != nil {
+		t.Error("GetCurrentTrace should return nil outside of span context")
+	}
+}
+
+func TestGetCurrentTrace_InsideSpan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	var trace *CurrentTrace
+	client.Span(ctx, "test", func(ctx context.Context) (any, error) {
+		trace = GetCurrentTrace(ctx)
+		return nil, nil
+	})
+
+	if trace == nil {
+		t.Error("GetCurrentTrace should return non-nil inside span context")
+	}
+}
+
+func TestTraceCompletion_SessionID(t *testing.T) {
+	clearAllTraceStates()
+	var mu sync.Mutex
+	var tracePayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalTraces") {
+			mu.Lock()
+			tracePayload = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test-function", func(ctx context.Context) (any, error) {
+		trace := GetCurrentTrace(ctx)
+		trace.SetSessionID("sess-123")
+		return "done", nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if tracePayload == nil {
+		t.Fatal("no trace payload captured")
+	}
+	// Session ID is at payload level, not in externalTrace
+	if tracePayload["sessionId"] != "sess-123" {
+		t.Errorf("sessionId = %v, want sess-123", tracePayload["sessionId"])
+	}
+}
+
+func TestTraceCompletion_Metadata(t *testing.T) {
+	clearAllTraceStates()
+	var mu sync.Mutex
+	var tracePayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalTraces") {
+			mu.Lock()
+			tracePayload = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test-function", func(ctx context.Context) (any, error) {
+		trace := GetCurrentTrace(ctx)
+		trace.SetMetadata(map[string]any{"user_id": "u-123", "region": "us-east"})
+		return "done", nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if tracePayload == nil {
+		t.Fatal("no trace payload captured")
+	}
+	rawTrace := tracePayload["externalTrace"].(map[string]any)
+	metadata := rawTrace["metadata"].(map[string]any)
+	if metadata["user_id"] != "u-123" {
+		t.Errorf("metadata user_id = %v, want u-123", metadata["user_id"])
+	}
+	if metadata["region"] != "us-east" {
+		t.Errorf("metadata region = %v, want us-east", metadata["region"])
+	}
+}
+
+func TestTraceCompletion_Contexts(t *testing.T) {
+	clearAllTraceStates()
+	var mu sync.Mutex
+	var tracePayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalTraces") {
+			mu.Lock()
+			tracePayload = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test-function", func(ctx context.Context) (any, error) {
+		trace := GetCurrentTrace(ctx)
+		trace.AddContext(map[string]any{"user_type": "premium", "tier": "gold"})
+		return "done", nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if tracePayload == nil {
+		t.Fatal("no trace payload captured")
+	}
+	rawTrace := tracePayload["externalTrace"].(map[string]any)
+	contexts := rawTrace["contexts"].([]any)
+	if len(contexts) != 1 {
+		t.Errorf("expected 1 context entry, got %d", len(contexts))
+	}
+	// Each AddContext call pushes the entire map as one entry
+	entry := contexts[0].(map[string]any)
+	if entry["user_type"] != "premium" {
+		t.Error("expected user_type to be 'premium'")
+	}
+	if entry["tier"] != "gold" {
+		t.Error("expected tier to be 'gold'")
+	}
+}
+
+func TestTraceCompletion_AllMethods(t *testing.T) {
+	clearAllTraceStates()
+	var mu sync.Mutex
+	var tracePayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalTraces") {
+			mu.Lock()
+			tracePayload = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test-function", func(ctx context.Context) (any, error) {
+		trace := GetCurrentTrace(ctx)
+		trace.SetSessionID("sess-789")
+		trace.SetMetadata(map[string]any{"workflow": "checkout"})
+		trace.AddContext(map[string]any{"step": "payment"})
+		return "done", nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if tracePayload == nil {
+		t.Fatal("no trace payload captured")
+	}
+	if tracePayload["sessionId"] != "sess-789" {
+		t.Errorf("sessionId = %v, want sess-789", tracePayload["sessionId"])
+	}
+	rawTrace := tracePayload["externalTrace"].(map[string]any)
+	metadata := rawTrace["metadata"].(map[string]any)
+	if metadata["workflow"] != "checkout" {
+		t.Errorf("metadata workflow = %v, want checkout", metadata["workflow"])
+	}
+	contexts := rawTrace["contexts"].([]any)
+	if len(contexts) != 1 {
+		t.Errorf("expected 1 context entry, got %d", len(contexts))
+	}
+}
+
+func TestTraceCompletion_OnlyForRootSpans(t *testing.T) {
+	clearAllTraceStates()
+	var mu sync.Mutex
+	var spanCount, traceCount int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			spanCount++
+		}
+		if strings.Contains(r.URL.Path, "externalTraces") {
+			traceCount++
+		}
+		mu.Unlock()
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "outer", func(ctx context.Context) (any, error) {
+		return client.Span(ctx, "inner", func(ctx context.Context) (any, error) {
+			return "inner-result", nil
+		})
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if spanCount != 2 {
+		t.Errorf("expected 2 spans, got %d", spanCount)
+	}
+	if traceCount != 1 {
+		t.Errorf("expected 1 trace completion, got %d", traceCount)
+	}
+}
+
+func TestTraceCompletion_HasEndedAt(t *testing.T) {
+	clearAllTraceStates()
+	var mu sync.Mutex
+	var tracePayload map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalTraces") {
+			mu.Lock()
+			tracePayload = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	client.Span(ctx, "test-function", func(ctx context.Context) (any, error) {
+		return "done", nil
+	})
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if tracePayload == nil {
+		t.Fatal("no trace payload captured")
+	}
+	rawTrace := tracePayload["externalTrace"].(map[string]any)
+	endedAt, ok := rawTrace["ended_at"].(string)
+	if !ok || endedAt == "" {
+		t.Error("ended_at should be present in trace completion")
+	}
 }
