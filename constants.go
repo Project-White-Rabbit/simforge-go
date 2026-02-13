@@ -4,7 +4,7 @@ package simforge
 const DefaultServiceURL = "https://simforge.goharvest.ai"
 
 // Version is the SDK version string sent with every API request.
-const Version = "0.5.1"
+const Version = "0.6.0"
 
 // Valid span types matching the backend enum.
 var validSpanTypes = map[string]bool{
