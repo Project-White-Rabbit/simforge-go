@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -104,9 +105,16 @@ func (h *httpClient) sendExternalSpan(payload map[string]any) {
 	go func() {
 		defer h.wg.Done()
 		defer func() {
-			recover() // Never crash the host app due to span sending
+			if r := recover(); r != nil {
+				func() {
+					defer func() { recover() }()
+					log.Printf("simforge: panic in background request: %v", r)
+				}()
+			}
 		}()
-		_ = h.request("/api/sdk/externalSpans", merged, withTimeout(30*time.Second))
+		if err := h.request("/api/sdk/externalSpans", merged, withTimeout(30*time.Second)); err != nil {
+			log.Printf("simforge: failed to send external span: %v", err)
+		}
 	}()
 }
 
@@ -122,9 +130,16 @@ func (h *httpClient) sendExternalTrace(payload map[string]any) {
 	go func() {
 		defer h.wg.Done()
 		defer func() {
-			recover() // Never crash the host app due to trace sending
+			if r := recover(); r != nil {
+				func() {
+					defer func() { recover() }()
+					log.Printf("simforge: panic in background request: %v", r)
+				}()
+			}
 		}()
-		_ = h.request("/api/sdk/externalTraces", merged, withTimeout(10*time.Second))
+		if err := h.request("/api/sdk/externalTraces", merged, withTimeout(10*time.Second)); err != nil {
+			log.Printf("simforge: failed to send external trace: %v", err)
+		}
 	}()
 }
 
