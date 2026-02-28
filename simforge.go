@@ -318,6 +318,7 @@ type ActiveSpan struct {
 	output           any
 	spanErr          error
 	contexts         []ContextEntry
+	prompt           string
 	isRootSpan       bool
 	once             sync.Once
 }
@@ -369,6 +370,18 @@ func (s *ActiveSpan) AddContext(context map[string]any) {
 	s.contexts = append(s.contexts, context)
 }
 
+// SetPrompt sets the prompt string on the span.
+// The prompt is stored in span_data.prompt. Calling multiple times
+// overwrites the previous value.
+// Safe to call on nil receiver (no-op).
+func (s *ActiveSpan) SetPrompt(prompt string) {
+	defer func() { recover() }()
+	if s == nil || prompt == "" {
+		return
+	}
+	s.prompt = prompt
+}
+
 // End completes the span and sends it to the API in the background.
 // End is idempotent — calling it multiple times has no effect after the first call.
 func (s *ActiveSpan) End() {
@@ -399,6 +412,9 @@ func (s *ActiveSpan) End() {
 		}
 		if len(s.contexts) > 0 {
 			spanData["contexts"] = s.contexts
+		}
+		if s.prompt != "" {
+			spanData["prompt"] = s.prompt
 		}
 
 		rawSpan := map[string]any{

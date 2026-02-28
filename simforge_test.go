@@ -1393,3 +1393,154 @@ func TestTraceCompletion_HasEndedAt(t *testing.T) {
 		t.Error("ended_at should be present in trace completion")
 	}
 }
+
+func TestStart_SetPrompt(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "TestSpan", WithType("llm"))
+	span.SetPrompt("You are a helpful assistant.")
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	if spanData["prompt"] != "You are a helpful assistant." {
+		t.Errorf("prompt = %v, want 'You are a helpful assistant.'", spanData["prompt"])
+	}
+}
+
+func TestStart_PromptOmittedWhenNotCalled(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "TestSpan")
+	span.SetOutput("result")
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	if _, ok := spanData["prompt"]; ok {
+		t.Error("prompt should not be present when SetPrompt was not called")
+	}
+}
+
+func TestStart_SetPromptLastCallWins(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "TestSpan", WithType("llm"))
+	span.SetPrompt("first prompt")
+	span.SetPrompt("second prompt")
+	span.SetPrompt("final prompt")
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	if spanData["prompt"] != "final prompt" {
+		t.Errorf("prompt = %v, want 'final prompt'", spanData["prompt"])
+	}
+}
+
+func TestSetPrompt_NilReceiver(t *testing.T) {
+	var span *ActiveSpan
+	span.SetPrompt("should not panic")
+}
+
+func TestSetPrompt_EmptyStringIgnored(t *testing.T) {
+	var mu sync.Mutex
+	var captured map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		json.NewDecoder(r.Body).Decode(&payload)
+		if strings.Contains(r.URL.Path, "externalSpans") {
+			mu.Lock()
+			captured = payload
+			mu.Unlock()
+		}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]any{"success": true})
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	ctx := context.Background()
+
+	_, span := client.Start(ctx, "test", "TestSpan")
+	span.SetPrompt("")
+	span.End()
+
+	client.FlushTraces(5 * time.Second)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	rawSpan := captured["rawSpan"].(map[string]any)
+	spanData := rawSpan["span_data"].(map[string]any)
+	if _, ok := spanData["prompt"]; ok {
+		t.Error("prompt should not be present when SetPrompt was called with empty string")
+	}
+}
