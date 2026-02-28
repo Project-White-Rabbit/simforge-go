@@ -40,10 +40,12 @@ import (
 
 // Client is the main entry point for creating spans.
 type Client struct {
-	apiKey     string
-	serviceURL string
-	enabled    bool
-	httpClient *httpClient
+	apiKey       string
+	serviceURL   string
+	enabled      bool
+	httpClient   *httpClient
+	pendingSpans map[string][]<-chan struct{}
+	pendingMu    sync.Mutex
 }
 
 // Option configures a Client.
@@ -64,9 +66,10 @@ func WithEnabled(enabled bool) Option {
 // NewClient creates a new Simforge client.
 func NewClient(apiKey string, opts ...Option) *Client {
 	c := &Client{
-		apiKey:     apiKey,
-		serviceURL: DefaultServiceURL,
-		enabled:    true,
+		apiKey:       apiKey,
+		serviceURL:   DefaultServiceURL,
+		enabled:      true,
+		pendingSpans: make(map[string][]<-chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -161,6 +164,9 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 	// Register trace state for root spans
 	if isRootSpan && getTraceState(traceID) == nil {
 		createTraceState(traceID)
+		c.pendingMu.Lock()
+		c.pendingSpans[traceID] = []<-chan struct{}{}
+		c.pendingMu.Unlock()
 	}
 
 	startedAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
@@ -204,7 +210,7 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 			rawSpan["parent_id"] = parentSpanID
 		}
 
-		c.httpClient.sendExternalSpan(map[string]any{
+		done := c.httpClient.sendExternalSpan(map[string]any{
 			"type":             "sdk-function",
 			"source":           "go-sdk-function",
 			"sourceTraceId":    traceID,
@@ -212,9 +218,29 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 			"rawSpan":          rawSpan,
 		})
 
-		// Send trace completion for root spans
 		if isRootSpan {
+			c.pendingMu.Lock()
+			pending := c.pendingSpans[traceID]
+			delete(c.pendingSpans, traceID)
+			c.pendingMu.Unlock()
+
+			for _, ch := range pending {
+				select {
+				case <-ch:
+				case <-time.After(5 * time.Second):
+				}
+			}
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+			}
+
 			c.sendTraceCompletion(traceFunctionKey, traceID, startedAt, endedAt)
+		} else {
+			c.pendingMu.Lock()
+			c.pendingSpans[traceID] = append(c.pendingSpans[traceID], done)
+			c.pendingMu.Unlock()
 		}
 	}()
 
@@ -255,6 +281,9 @@ func (c *Client) Start(ctx context.Context, traceFunctionKey string, spanName st
 	// Register trace state for root spans
 	if isRootSpan && getTraceState(traceID) == nil {
 		createTraceState(traceID)
+		c.pendingMu.Lock()
+		c.pendingSpans[traceID] = []<-chan struct{}{}
+		c.pendingMu.Unlock()
 	}
 
 	childCtx := withSpanContext(ctx, traceID, spanID)
@@ -428,7 +457,7 @@ func (s *ActiveSpan) End() {
 			rawSpan["parent_id"] = s.parentSpanID
 		}
 
-		s.client.httpClient.sendExternalSpan(map[string]any{
+		done := s.client.httpClient.sendExternalSpan(map[string]any{
 			"type":             "sdk-function",
 			"source":           "go-sdk-function",
 			"sourceTraceId":    s.traceID,
@@ -436,9 +465,29 @@ func (s *ActiveSpan) End() {
 			"rawSpan":          rawSpan,
 		})
 
-		// Send trace completion for root spans
 		if s.isRootSpan {
+			s.client.pendingMu.Lock()
+			pending := s.client.pendingSpans[s.traceID]
+			delete(s.client.pendingSpans, s.traceID)
+			s.client.pendingMu.Unlock()
+
+			for _, ch := range pending {
+				select {
+				case <-ch:
+				case <-time.After(5 * time.Second):
+				}
+			}
+
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+			}
+
 			s.client.sendTraceCompletion(s.traceFunctionKey, s.traceID, s.startedAt, endedAt)
+		} else {
+			s.client.pendingMu.Lock()
+			s.client.pendingSpans[s.traceID] = append(s.client.pendingSpans[s.traceID], done)
+			s.client.pendingMu.Unlock()
 		}
 	})
 }

@@ -93,17 +93,21 @@ func (h *httpClient) request(endpoint string, payload map[string]any, opts ...re
 	return lastErr
 }
 
-// sendExternalSpan sends a span payload in the background (fire-and-forget).
-func (h *httpClient) sendExternalSpan(payload map[string]any) {
+// sendExternalSpan sends a span payload in the background and returns a channel
+// that is closed when the HTTP request completes. This allows callers to await
+// span delivery before sending trace completion.
+func (h *httpClient) sendExternalSpan(payload map[string]any) <-chan struct{} {
 	merged := make(map[string]any, len(payload)+1)
 	for k, v := range payload {
 		merged[k] = v
 	}
 	merged["sdkVersion"] = Version
 
+	done := make(chan struct{})
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
+		defer close(done)
 		defer func() {
 			if r := recover(); r != nil {
 				func() {
@@ -116,6 +120,7 @@ func (h *httpClient) sendExternalSpan(payload map[string]any) {
 			log.Printf("simforge: failed to send external span: %v", err)
 		}
 	}()
+	return done
 }
 
 // sendExternalTrace sends a trace payload in the background (fire-and-forget).
