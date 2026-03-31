@@ -1,4 +1,4 @@
-module github.com/Project-White-Rabbit/simforge-go
+module github.com/Project-White-Rabbit/bitfab-go
 
 go 1.21
 

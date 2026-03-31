@@ -1,6 +1,6 @@
-// Package simforge provides span tracing for Go applications.
+// Package bitfab provides span tracing for Go applications.
 //
-// It sends trace data to the Simforge API for visualization and analysis.
+// It sends trace data to the Bitfab API for visualization and analysis.
 // Spans are sent asynchronously in background goroutines.
 //
 // Two tracing styles are supported:
@@ -9,12 +9,12 @@
 //
 //	result, err := client.Span(ctx, "my-service", func(ctx context.Context) (any, error) {
 //	    return doWork(ctx)
-//	}, simforge.WithName("ProcessOrder"), simforge.WithType("function"))
+//	}, bitfab.WithName("ProcessOrder"), bitfab.WithType("function"))
 //
 // Start/End style (instrument an existing function):
 //
 //	func processOrder(ctx context.Context, orderID string) (Order, error) {
-//	    ctx, span := client.Start(ctx, "order-service", "ProcessOrder", simforge.WithType("function"))
+//	    ctx, span := client.Start(ctx, "order-service", "ProcessOrder", bitfab.WithType("function"))
 //	    defer span.End()
 //	    span.SetInput(orderID)
 //	    order, err := doWork(ctx, orderID)
@@ -25,7 +25,7 @@
 //	    span.SetOutput(order)
 //	    return order, nil
 //	}
-package simforge
+package bitfab
 
 import (
 	"context"
@@ -51,7 +51,7 @@ type Client struct {
 // Option configures a Client.
 type Option func(*Client)
 
-// WithServiceURL sets a custom Simforge API base URL.
+// WithServiceURL sets a custom Bitfab API base URL.
 func WithServiceURL(url string) Option {
 	return func(c *Client) { c.serviceURL = url }
 }
@@ -63,7 +63,7 @@ func WithEnabled(enabled bool) Option {
 	return func(c *Client) { c.enabled = enabled }
 }
 
-// NewClient creates a new Simforge client.
+// NewClient creates a new Bitfab client.
 func NewClient(apiKey string, opts ...Option) *Client {
 	c := &Client{
 		apiKey:       apiKey,
@@ -75,7 +75,7 @@ func NewClient(apiKey string, opts ...Option) *Client {
 		opt(c)
 	}
 	if c.enabled && strings.TrimSpace(c.apiKey) == "" {
-		log.Println("Simforge: apiKey is empty — tracing is disabled. Provide a valid API key to enable tracing.")
+		log.Println("Bitfab: apiKey is empty — tracing is disabled. Provide a valid API key to enable tracing.")
 		c.enabled = false
 	}
 	c.httpClient = newHTTPClient(c.apiKey, c.serviceURL)
@@ -124,7 +124,7 @@ func WithInput(args ...any) SpanOption {
 	}
 }
 
-// Span executes fn inside a traced span. The span is sent to the Simforge API
+// Span executes fn inside a traced span. The span is sent to the Bitfab API
 // in the background after fn completes. Nested spans are automatically tracked
 // through the context.
 //
@@ -145,7 +145,7 @@ func (c *Client) Span(ctx context.Context, traceFunctionKey string, fn SpanFunc,
 	}
 
 	if !validSpanTypes[cfg.spanType] {
-		return nil, fmt.Errorf("simforge: invalid span type %q, must be one of: llm, agent, function, guardrail, handoff, custom", cfg.spanType)
+		return nil, fmt.Errorf("bitfab: invalid span type %q, must be one of: llm, agent, function, guardrail, handoff, custom", cfg.spanType)
 	}
 
 	parent := currentSpan(ctx)

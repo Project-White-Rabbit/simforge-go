@@ -1,4 +1,4 @@
-package simforge
+package bitfab
 
 import (
 	"encoding/json"

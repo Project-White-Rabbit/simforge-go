@@ -1,4 +1,4 @@
-package simforge
+package bitfab
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ func newHTTPClient(apiKey, serviceURL string) *httpClient {
 	}
 }
 
-// request makes a POST request to the Simforge API.
+// request makes a POST request to the Bitfab API.
 func (h *httpClient) request(endpoint string, payload map[string]any, opts ...requestOption) error {
 	cfg := requestConfig{
 		timeout:    0, // use default client timeout
@@ -41,7 +41,7 @@ func (h *httpClient) request(endpoint string, payload map[string]any, opts ...re
 
 	body, err := MarshalSpanPayload(payload)
 	if err != nil {
-		return fmt.Errorf("simforge: failed to marshal payload: %w", err)
+		return fmt.Errorf("bitfab: failed to marshal payload: %w", err)
 	}
 
 	var lastErr error
@@ -57,7 +57,7 @@ func (h *httpClient) request(endpoint string, payload map[string]any, opts ...re
 
 		req, err := http.NewRequest("POST", h.serviceURL+endpoint, bytes.NewReader(body))
 		if err != nil {
-			return fmt.Errorf("simforge: failed to create request: %w", err)
+			return fmt.Errorf("bitfab: failed to create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+h.apiKey)
@@ -72,7 +72,7 @@ func (h *httpClient) request(endpoint string, payload map[string]any, opts ...re
 		resp.Body.Close()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("simforge: HTTP %d: %s", resp.StatusCode, string(respBody))
+			lastErr = fmt.Errorf("bitfab: HTTP %d: %s", resp.StatusCode, string(respBody))
 			continue
 		}
 
@@ -112,12 +112,12 @@ func (h *httpClient) sendExternalSpan(payload map[string]any) <-chan struct{} {
 			if r := recover(); r != nil {
 				func() {
 					defer func() { recover() }()
-					log.Printf("simforge: panic in background request: %v", r)
+					log.Printf("bitfab: panic in background request: %v", r)
 				}()
 			}
 		}()
 		if err := h.request("/api/sdk/externalSpans", merged, withTimeout(30*time.Second)); err != nil {
-			log.Printf("simforge: failed to send external span: %v", err)
+			log.Printf("bitfab: failed to send external span: %v", err)
 		}
 	}()
 	return done
@@ -138,12 +138,12 @@ func (h *httpClient) sendExternalTrace(payload map[string]any) {
 			if r := recover(); r != nil {
 				func() {
 					defer func() { recover() }()
-					log.Printf("simforge: panic in background request: %v", r)
+					log.Printf("bitfab: panic in background request: %v", r)
 				}()
 			}
 		}()
 		if err := h.request("/api/sdk/externalTraces", merged, withTimeout(10*time.Second)); err != nil {
-			log.Printf("simforge: failed to send external trace: %v", err)
+			log.Printf("bitfab: failed to send external trace: %v", err)
 		}
 	}()
 }

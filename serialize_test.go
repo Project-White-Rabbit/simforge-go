@@ -1,4 +1,4 @@
-package simforge
+package bitfab
 
 import (
 	"encoding/json"
@@ -126,7 +126,7 @@ func TestJSONMarshal_Assembly(t *testing.T) {
 		},
 	}
 
-	// Build span data the same way simforge.go does
+	// Build span data the same way bitfab.go does
 	spanData := map[string]any{
 		"name":   "test-span",
 		"type":   "function",
